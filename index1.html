@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Task Dashboard - Jigsaw Puzzle</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* Drag & Drop Styles */
+        .puzzle-piece {
+            cursor: grab;
+            transition: transform 0.1s;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .puzzle-piece:active {
+            cursor: grabbing;
+            transform: scale(1.05);
+            z-index: 50;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+        }
+        .drop-zone {
+            background-color: #f3f4f6;
+            border: 2px dashed #d1d5db;
+            position: relative;
+        }
+        .drop-zone.hovered {
+            background-color: #e5e7eb;
+            border-color: #4f46e5;
+        }
+        
+        /* Modal Animation */
+        .modal-animate { animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        
+        .custom-scroll::-webkit-scrollbar { height: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+
+    <script>
+        window.onerror = function(msg) { console.log("Task Log:", msg); return true; };
+    </script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-indigo-700 text-white p-4 shadow-lg sticky top-0 z-30">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                📂 Task Management System
+            </h1>
+            <div class="flex items-center gap-3">
+                <span id="status-indicator" class="text-[10px] bg-gray-600 px-2 py-1 rounded font-mono uppercase tracking-tighter">Syncing...</span>
+                <button id="btn-show-admin" class="text-xs bg-indigo-800 hover:bg-indigo-900 px-3 py-1 rounded transition border border-indigo-600">Admin Login</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Global Message Modal -->
+    <div id="message-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full modal-animate text-center">
+            <div id="modal-icon" class="text-5xl mb-4">ℹ️</div>
+            <h3 id="modal-title" class="text-2xl font-bold text-gray-900 mb-2">Notice</h3>
+            <div id="modal-text" class="text-gray-600 mb-6 leading-relaxed whitespace-pre-wrap"></div>
+            <button onclick="document.getElementById('message-modal').classList.add('hidden')" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition shadow-lg">
+                Understand
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-grow p-4 md:p-6 overflow-y-auto">
+        <div id="app-container" class="max-w-6xl mx-auto space-y-8">
+            
+            <!-- Loading -->
+            <div id="loading-view" class="text-center py-20">
+                <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-indigo-600 border-t-transparent"></div>
+                <p class="mt-4 text-slate-500 font-bold uppercase text-xs tracking-widest">Building Environment...</p>
+            </div>
+
+            <!-- Content Area -->
+            <div id="main-view" class="hidden space-y-8">
+                
+                <!-- Player & Submission -->
+                <div class="bg-white p-6 rounded-2xl shadow-md border-2 border-indigo-100 sticky top-20 z-20">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+                        <h2 class="text-lg font-bold text-indigo-800 uppercase tracking-wide">Player Details</h2>
+                        <div id="config-warning" class="hidden text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-100 uppercase">Offline Mode (No Database)</div>
+                    </div>
+                    
+                    <div class="flex flex-col gap-4">
+                        <div class="flex flex-col md:flex-row gap-4">
+                            <div class="flex-1">
+                                <label class="text-[10px] font-bold text-gray-400 uppercase ml-1">Full Name</label>
+                                <input type="text" id="user-name" placeholder="Enter Full Name" class="w-full px-4 py-2 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition">
+                            </div>
+                            <div class="flex-1">
+                                <label class="text-[10px] font-bold text-gray-400 uppercase ml-1">Gmail Address</label>
+                                <input type="email" id="user-email" placeholder="Enter Gmail Address" class="w-full px-4 py-2 bg-slate-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition">
+                            </div>
+                        </div>
+                        
+                        <button id="btn-global-submit" class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg text-lg transition transform active:scale-[0.98] flex items-center justify-center gap-2">
+                            <span>✅</span> SUBMIT COMPLETED TASKS
+                        </button>
+                        <p class="text-[10px] text-center text-slate-400 font-medium italic">Complete the puzzles below and click Submit. If you have submitted before, this button will show your results.</p>
+                    </div>
+                </div>
+
+                <!-- ALL TASKS -->
+                <div id="tasks-container" class="grid grid-cols-1 lg:grid-cols-2 gap-8 pb-20">
+                    <!-- Tasks injected by JS -->
+                </div>
+            </div>
+
+            <!-- ADMIN VIEW -->
+            <div id="admin-view" class="hidden fixed inset-0 z-40 bg-white overflow-y-auto">
+                <div class="max-w-7xl mx-auto p-6">
+                    <div class="flex justify-between items-center mb-8 border-b pb-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Admin Dashboard</h2>
+                        <button onclick="app.closeAdmin()" class="px-6 py-2 bg-gray-100 rounded-lg font-bold hover:bg-gray-200 transition">Return to Home</button>
+                    </div>
+                    
+                    <div id="admin-auth" class="max-w-md mx-auto mt-20 p-8 bg-slate-50 rounded-2xl border border-gray-200 shadow-sm">
+                        <h3 class="text-sm font-black text-center uppercase tracking-widest mb-6">Verify Identity</h3>
+                        <div class="space-y-4">
+                            <input type="email" id="admin-email" placeholder="bindukaradoni@gmail.com" class="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500">
+                            <input type="password" id="admin-pwd" placeholder="Password" class="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500">
+                            <button onclick="app.loginAdmin()" class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-md hover:bg-indigo-700 transition">Verify</button>
+                        </div>
+                        <p id="admin-msg" class="text-red-500 text-xs mt-4 text-center font-bold"></p>
+                    </div>
+
+                    <div id="admin-content" class="hidden space-y-12">
+                        <!-- USER SUMMARY (Aggregated Results) -->
+                        <div>
+                            <h3 class="text-xl font-bold text-indigo-800 mb-4 uppercase tracking-tighter flex items-center gap-2">
+                                <span class="bg-indigo-100 p-2 rounded-lg">📊</span> Results Summary (Global Attendance)
+                            </h3>
+                            <div class="overflow-x-auto bg-white rounded-2xl border border-indigo-100 shadow-sm">
+                                <table class="w-full text-left border-collapse">
+                                    <thead class="bg-indigo-50 text-indigo-900 text-[10px] uppercase font-black tracking-widest">
+                                        <tr>
+                                            <th class="p-5">Name</th>
+                                            <th class="p-5">Complete Email</th>
+                                            <th class="p-5 text-center">Tasks Attended</th>
+                                            <th class="p-5 text-center">Tasks Correct</th>
+                                            <th class="p-5 text-center">Avg Accuracy</th>
+                                            <th class="p-5 text-center">Total Time Spent</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="summary-body" class="text-sm divide-y divide-gray-100">
+                                        <!-- Aggregated user stats -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- INDIVIDUAL TASK LOGS -->
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-700 mb-4 uppercase tracking-tighter flex items-center gap-2">
+                                <span class="bg-slate-100 p-2 rounded-lg">📝</span> Detailed Task Activity
+                            </h3>
+                            <div class="overflow-x-auto bg-white rounded-2xl border border-gray-200 shadow-sm">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead class="bg-gray-50 text-gray-400 text-[9px] uppercase font-bold tracking-widest">
+                                        <tr>
+                                            <th class="p-4">Gmail Address</th>
+                                            <th class="p-4">Task Name</th>
+                                            <th class="p-4 text-center">Result</th>
+                                            <th class="p-4 text-center">Time</th>
+                                            <th class="p-4 text-right">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="logs-body" class="divide-y divide-gray-100"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- DATA ---
+        const images = [
+            { id: 1, name: 'Nature Scene', url: 'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=400&h=400&fit=crop' },
+            { id: 2, name: 'Sports Car', url: 'https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=400&h=400&fit=crop' },
+            { id: 3, name: 'Candy Shop', url: 'https://images.unsplash.com/photo-1575224300306-1b8da36134ec?w=400&h=400&fit=crop' },
+            { id: 4, name: 'Deep Space', url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&h=400&fit=crop' },
+            { id: 5, name: 'Old Architecture', url: 'https://images.unsplash.com/photo-1486325212027-8081e485255e?w=400&h=400&fit=crop' },
+            { id: 6, name: 'Wild Animal', url: 'https://images.unsplash.com/photo-1474511320723-9a56873867b5?w=400&h=400&fit=crop' },
+            { id: 7, name: 'Healthy Food', url: 'https://images.unsplash.com/photo-1484723091739-30a097e8f929?w=400&h=400&fit=crop' },
+            { id: 8, name: 'Ocean Life', url: 'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=400&h=400&fit=crop' }
+        ];
+
+        // --- STATE ---
+        const state = {
+            db: null,
+            offlineMode: false,
+            puzzles: {} 
+        };
+
+        const APP_ID = typeof window.__app_id !== 'undefined' ? window.__app_id : 'task-system-v1';
+        const $ = (id) => document.getElementById(id);
+
+        // --- CORE FUNCTIONS ---
+        function init() {
+            renderTasks();
+            setupFirebase();
+            
+            $('btn-show-admin').onclick = () => { $('admin-view').classList.remove('hidden'); };
+            $('btn-global-submit').onclick = handleSubmitAll;
+            
+            window.app = {
+                closeAdmin: () => $('admin-view').classList.add('hidden'),
+                loginAdmin: handleAdminLogin
+            };
+        }
+
+        async function setupFirebase() {
+            try {
+                let config;
+                if(window.__firebase_config) {
+                    config = typeof window.__firebase_config === 'string' ? JSON.parse(window.__firebase_config) : window.__firebase_config;
+                } else { throw new Error("No Config"); }
+                if(config.apiKey === "YOUR_API_KEY_HERE") throw new Error("Placeholder");
+                const app = initializeApp(config);
+                const auth = getAuth(app);
+                state.db = getFirestore(app);
+                if (window.__initial_auth_token) await signInWithCustomToken(auth, window.__initial_auth_token);
+                else await signInAnonymously(auth);
+                $('status-indicator').textContent = "ONLINE - SYNCED";
+                $('status-indicator').className = "text-[10px] bg-green-600 text-white px-2 py-1 rounded font-mono uppercase tracking-tighter";
+            } catch (e) {
+                state.offlineMode = true;
+                $('status-indicator').textContent = "OFFLINE - LOCAL ONLY";
+                $('status-indicator').className = "text-[10px] bg-orange-500 text-white px-2 py-1 rounded font-mono uppercase tracking-tighter";
+                $('config-warning').classList.remove('hidden');
+            } finally {
+                $('loading-view').classList.add('hidden');
+                $('main-view').classList.remove('hidden');
+            }
+        }
+
+        function renderTasks() {
+            const container = $('tasks-container');
+            container.innerHTML = images.map((img, idx) => `
+                <div id="task-card-${idx}" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 transition duration-500 relative">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xs font-black text-slate-700 uppercase tracking-widest">TASK ${idx + 1}: ${img.name}</h3>
+                        <div class="flex items-center gap-2">
+                             <span id="placed-count-${idx}" class="text-[9px] font-bold bg-slate-100 px-2 py-1 rounded text-slate-500 uppercase">Placed: 0/9</span>
+                             <div class="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-mono font-bold" id="timer-${idx}">00:00</div>
+                        </div>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                        <div id="board-${idx}" class="grid grid-cols-3 gap-0.5 bg-slate-200 p-0.5 rounded shadow-inner shrink-0" style="width: 208px; height: 208px;"></div>
+                        <div class="flex-1 bg-slate-50 p-2 rounded-xl border border-slate-200 min-h-[160px]">
+                            <div id="pile-${idx}" class="flex flex-wrap gap-1 content-start justify-center"></div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            images.forEach((img, idx) => initPuzzle(img, idx));
+        }
+
+        function initPuzzle(img, idx) {
+            const board = $(`board-${idx}`);
+            const pile = $(`pile-${idx}`);
+            state.puzzles[idx] = { startTime: Date.now(), completed: false, timerInterval: null };
+            state.puzzles[idx].timerInterval = setInterval(() => {
+                if(state.puzzles[idx].completed) return;
+                const elapsed = Math.floor((Date.now() - state.puzzles[idx].startTime) / 1000);
+                const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+                const s = (elapsed % 60).toString().padStart(2, '0');
+                if($(`timer-${idx}`)) $(`timer-${idx}`).textContent = `${m}:${s}`;
+            }, 1000);
+            const pieceSize = 68; 
+            const positions = Array.from({length: 9}, (_, i) => ({ id: i, x: i % 3, y: Math.floor(i / 3) }));
+            positions.forEach(pos => {
+                const zone = document.createElement('div');
+                zone.className = 'drop-zone flex justify-center items-center';
+                zone.style.width = `${pieceSize}px`; zone.style.height = `${pieceSize}px`;
+                zone.dataset.id = pos.id; zone.dataset.puzzleIdx = idx;
+                zone.addEventListener('dragover', e => e.preventDefault());
+                zone.addEventListener('drop', handleDrop);
+                board.appendChild(zone);
+            });
+            [...positions].sort(() => Math.random() - 0.5).forEach(pos => {
+                const p = document.createElement('div');
+                p.className = 'puzzle-piece shadow rounded-sm cursor-move';
+                p.style.width = `${pieceSize}px`; p.style.height = `${pieceSize}px`;
+                p.draggable = true; p.dataset.correct = pos.id; p.dataset.puzzleIdx = idx;
+                p.style.backgroundImage = `url('${img.url}')`;
+                p.style.backgroundSize = `${pieceSize * 3}px ${pieceSize * 3}px`;
+                p.style.backgroundPosition = `-${pos.x * pieceSize}px -${pos.y * pieceSize}px`;
+                p.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', JSON.stringify({ pid: pos.id, sourceIdx: idx }));
+                    window.draggedEl = p;
+                });
+                setupTouch(p);
+                pile.appendChild(p);
+            });
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            const dataStr = e.dataTransfer.getData('text/plain');
+            if(!dataStr) return;
+            try {
+                const data = JSON.parse(dataStr);
+                const zone = e.target.closest('.drop-zone');
+                if(!zone || parseInt(zone.dataset.puzzleIdx) !== data.sourceIdx) return;
+                const piece = window.draggedEl;
+                if(piece && parseInt(piece.dataset.puzzleIdx) === data.sourceIdx) {
+                    if(zone.children.length > 0) $(`pile-${data.sourceIdx}`).appendChild(zone.children[0]);
+                    zone.appendChild(piece);
+                    updatePlacedCounter(data.sourceIdx);
+                }
+            } catch(err) {}
+        }
+
+        function updatePlacedCounter(idx) {
+            const placed = $(`board-${idx}`).querySelectorAll('.puzzle-piece').length;
+            $(`placed-count-${idx}`).textContent = `Placed: ${placed}/9`;
+            $(`placed-count-${idx}`).className = `text-[9px] font-bold px-2 py-1 rounded ${placed === 9 ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`;
+        }
+
+        async function handleSubmitAll() {
+            const nameInput = $('user-name').value.trim();
+            const emailInput = $('user-email').value.trim();
+            if(!nameInput || !emailInput) { showModal("Identify Player", "Complete Step 1: Identify yourself before submitting.", true); return; }
+            const btn = $('btn-global-submit');
+            btn.textContent = "SYNCHRONIZING..."; btn.disabled = true;
+
+            // Database Duplicate Check & Fetch Result
+            if(!state.offlineMode && state.db) {
+                try {
+                    const snap = await getDocs(collection(state.db, 'artifacts', APP_ID, 'public', 'data', 'logs'));
+                    let userRecords = [];
+                    snap.forEach(d => { 
+                        if(d.data().email?.toLowerCase() === emailInput.toLowerCase()) userRecords.push(d.data()); 
+                    });
+
+                    if(userRecords.length > 0) {
+                        const attended = userRecords.length;
+                        const correct = userRecords.filter(r => r.accuracy === '9/9').length;
+                        const name = userRecords[0].name;
+
+                        showModal(
+                            "Welcome Back, " + name, 
+                            `You have already submitted your tasks for this account.\n\n📊 YOUR PREVIOUS RESULTS:\n- Tasks Attended: ${attended} / 8\n- Tasks Correct: ${correct} / 8\n\nNo further submissions are allowed for this account.`, 
+                            false
+                        );
+                        
+                        btn.textContent = "SUBMIT COMPLETED TASKS"; 
+                        btn.disabled = false;
+                        logout(); // Clear the board anyway
+                        return;
+                    }
+                } catch(e) { console.error(e); }
+            }
+
+            let logs = [];
+            let correctTasksCount = 0;
+            for(let i=0; i<images.length; i++) {
+                const zones = Array.from($(`board-${i}`).children);
+                if(zones.filter(z => z.children.length > 0).length === 9) {
+                    let correctPieces = 0;
+                    zones.forEach(z => { if(z.children.length > 0 && z.children[0].dataset.correct === z.dataset.id) correctPieces++; });
+                    if(correctPieces === 9) correctTasksCount++;
+                    logs.push({ theme: images[i].name, accuracy: `${correctPieces}/9`, time: $(`timer-${i}`).textContent });
+                }
+            }
+
+            if(logs.length === 0) { showModal("No Finished Tasks", "Please fill at least one puzzle board (9/9 pieces placed) before submitting.", true); btn.textContent = "SUBMIT ALL COMPLETED TASKS"; btn.disabled = false; return; }
+
+            if(!state.offlineMode && state.db) {
+                for(let log of logs) {
+                    await addDoc(collection(state.db, 'artifacts', APP_ID, 'public', 'data', 'logs'), {
+                        name: nameInput, email: emailInput, theme: log.theme, accuracy: log.accuracy, timeFormatted: log.time, timestamp: serverTimestamp()
+                    });
+                }
+            }
+
+            showModal("Tasks Submitted", `Successfully logged ${logs.length} task(s). You solved ${correctTasksCount} correctly. You have been automatically logged out.`);
+            btn.textContent = "SUBMIT ALL COMPLETED TASKS"; btn.disabled = false;
+            logout();
+        }
+
+        function logout() {
+            $('user-name').value = ''; $('user-email').value = '';
+            images.forEach((_, i) => {
+                const board = $(`board-${i}`); const pile = $(`pile-${i}`);
+                board.querySelectorAll('.puzzle-piece').forEach(p => pile.appendChild(p));
+                state.puzzles[i].completed = false; 
+                state.puzzles[i].startTime = Date.now();
+                updatePlacedCounter(i);
+            });
+        }
+
+        function setupTouch(el) {
+            let startX, startY;
+            el.addEventListener('touchstart', e => {
+                const t = e.touches[0]; const r = el.getBoundingClientRect();
+                startX = t.clientX - r.left; startY = t.clientY - r.top;
+                el.style.position = 'fixed'; el.style.zIndex = 100;
+                move(t.clientX, t.clientY);
+            }, {passive:false});
+            el.addEventListener('touchmove', e => { e.preventDefault(); move(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+            el.addEventListener('touchend', e => {
+                el.style.display = 'none';
+                const elBelow = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                el.style.display = 'block'; el.style.position = ''; el.style.zIndex = '';
+                const zone = elBelow?.closest('.drop-zone');
+                const pIdx = el.dataset.puzzleIdx;
+                if(zone && zone.dataset.puzzleIdx === pIdx) {
+                    if(zone.children.length > 0) $(`pile-${pIdx}`).appendChild(zone.children[0]);
+                    zone.appendChild(el);
+                } else $(`pile-${pIdx}`).appendChild(el);
+                updatePlacedCounter(pIdx);
+            });
+            function move(x,y) { el.style.left = (x-startX)+'px'; el.style.top = (y-startY)+'px'; }
+        }
+
+        function showModal(t, txt, isErr = false) {
+            $('modal-title').textContent = t; $('modal-text').textContent = txt;
+            $('modal-title').className = `text-2xl font-bold mb-2 ${isErr ? 'text-red-600' : 'text-green-600'}`;
+            $('message-modal').classList.remove('hidden');
+        }
+
+        async function handleAdminLogin() {
+            const e = $('admin-email').value.trim().toLowerCase(); 
+            const p = $('admin-pwd').value;
+            if(e === 'bindukaradoni@gmail.com' && p === 'bindu') {
+                $('admin-auth').classList.add('hidden'); $('admin-content').classList.remove('hidden');
+                const tbody = $('logs-body'); const sbody = $('summary-body');
+                tbody.innerHTML = '<tr><td class="p-4" colspan="5">Loading...</td></tr>';
+                sbody.innerHTML = '<tr><td class="p-4" colspan="6">Loading...</td></tr>';
+                if(!state.db) return;
+                
+                const snap = await getDocs(collection(state.db, 'artifacts', APP_ID, 'public', 'data', 'logs'));
+                let lHtml = ''; let userSum = {};
+                
+                snap.forEach(d => {
+                    const data = d.data();
+                    lHtml += `<tr><td class="p-4">${data.email}</td><td class="p-4 font-bold text-slate-700">${data.theme}</td><td class="p-4 text-center font-bold text-indigo-600">${data.accuracy}</td><td class="p-4 text-center font-mono text-xs">${data.timeFormatted}</td><td class="p-4 text-right text-slate-400 text-[10px]">${data.timestamp?.toDate().toLocaleDateString() || 'N/A'}</td></tr>`;
+                    
+                    const key = data.email.toLowerCase();
+                    if(!userSum[key]) userSum[key] = { name: data.name, attended: 0, correctTasks: 0, totalCorrectPieces: 0, totalPossiblePieces: 0, totalTimeSec: 0 };
+                    
+                    userSum[key].attended++;
+                    const parts = data.accuracy.split('/');
+                    const c = parseInt(parts[0]);
+                    const tot = parseInt(parts[1]);
+                    if (c === 9) userSum[key].correctTasks++;
+                    
+                    userSum[key].totalCorrectPieces += c; 
+                    userSum[key].totalPossiblePieces += tot;
+                    
+                    const timeParts = data.timeFormatted.split(':').map(Number);
+                    userSum[key].totalTimeSec += (timeParts[0] * 60 + timeParts[1]);
+                });
+                
+                tbody.innerHTML = lHtml || '<tr><td colspan="5" class="p-4 text-center">Empty</td></tr>';
+                
+                let sHtml = '';
+                for(let k in userSum) {
+                    const u = userSum[k];
+                    const avgAcc = ((u.totalCorrectPieces / u.totalPossiblePieces) * 100).toFixed(1);
+                    const totalM = Math.floor(u.totalTimeSec / 60);
+                    const totalS = u.totalTimeSec % 60;
+                    
+                    sHtml += `
+                    <tr class="hover:bg-indigo-50 transition border-b border-slate-50">
+                        <td class="p-5 font-bold text-slate-800">${u.name}</td>
+                        <td class="p-5 text-indigo-600 font-medium">${k}</td>
+                        <td class="p-5 text-center font-black">${u.attended} / 8</td>
+                        <td class="p-5 text-center font-black text-green-600">${u.correctTasks} / 8</td>
+                        <td class="p-5 text-center">
+                            <span class="px-3 py-1 rounded-full text-xs font-bold ${parseFloat(avgAcc) > 80 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}">
+                                ${avgAcc}%
+                            </span>
+                        </td>
+                        <td class="p-5 text-center font-mono text-xs font-bold text-slate-500">
+                            ${totalM.toString().padStart(2,'0')}:${totalS.toString().padStart(2,'0')}
+                        </td>
+                    </tr>`;
+                }
+                sbody.innerHTML = sHtml || '<tr><td colspan="6" class="p-4 text-center text-slate-400 font-bold">No participant data recorded.</td></tr>';
+            } else $('admin-msg').textContent = "INVALID ACCESS PRIVILEGES";
+        }
+        init();
+    </script>
+</body>
+</html>
